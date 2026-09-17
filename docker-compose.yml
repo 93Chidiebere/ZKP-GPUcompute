@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  sovereign-proxy:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - REMOTE_NODE_URL=http://host.docker.internal:8000 # Pointing to the local Kenya node for PoC
+    volumes:
+      - .:/app
