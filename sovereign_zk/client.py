@@ -54,12 +54,10 @@ class SovereignClient:
         )
 
         headers = {"fernet-key": self.fernet_key.decode("utf-8")}
-        with (
-            open(encrypted_data_path, "rb") as encrypted,
-            open(model_path, "rb") as model,
-            open(pk_path, "rb") as proving_key,
-            open(srs_path, "rb") as srs,
-        ):
+        with open(encrypted_data_path, "rb") as encrypted, \
+             open(model_path, "rb") as model, \
+             open(pk_path, "rb") as proving_key, \
+             open(srs_path, "rb") as srs:
             files = {
                 "encrypted_data": encrypted,
                 "compiled_model": model,
