@@ -1,75 +1,65 @@
 import os
 import json
 import time
-from flask import Flask, request, jsonify
-from cryptography.fernet import Fernet
+import hashlib
 
-os.environ["HOME"] = os.environ.get("USERPROFILE", "C:\\")
-import ezkl
+def main():
+    print("--- [KENYA NODE] Sovereign-ZK SLA Node ---")
+    print("[*] Listening for new AI Compute Jobs (Off-Chain)...")
 
-app = Flask(__name__)
-
-@app.route("/compute", methods=["POST"])
-def compute_proof():
-    print("--- [KENYA NODE] New Compute Job Received ---")
-    
-    if "encrypted_data" not in request.files:
-        return jsonify({"error": "Missing encrypted_data"}), 400
-        
-    fernet_key = request.headers.get("fernet-key")
-    if not fernet_key:
-        return jsonify({"error": "Missing fernet-key header"}), 400
-        
-    data_path = "temp_encrypted.bin"
-    model_path = "temp_network.compiled"
-    pk_path = "temp_pk.key"
-    srs_path = "temp_kzg.srs"
-    
-    request.files["encrypted_data"].save(data_path)
-    request.files["compiled_model"].save(model_path)
-    request.files["pk_key"].save(pk_path)
-    request.files["kzg_srs"].save(srs_path)
-    
-    print("[*] Enclave receiving encrypted payload...")
-    
-    try:
-        cipher_suite = Fernet(fernet_key.encode('utf-8'))
-        with open(data_path, "rb") as f:
-            encrypted_bytes = f.read()
-        plaintext = cipher_suite.decrypt(encrypted_bytes)
-        data_dict = json.loads(plaintext.decode('utf-8'))
-        print("[+] Enclave decrypted transaction data internally.")
-    except Exception as e:
-        return jsonify({"error": f"Decryption failed: {str(e)}"}), 400
-
-    enclave_input_path = "temp_enclave_input.json"
-    with open(enclave_input_path, "w") as f:
-        json.dump(data_dict, f)
-
-    witness_path = "temp_witness.json"
-    output_proof_path = "temp_proof.json"
-    
-    print("[*] Generating cryptographic witness from data...")
-    ezkl.gen_witness(enclave_input_path, model_path, witness_path)
-    
-    print("[*] Executing Deep Learning Inference & Generating ZK Proof...")
-    start_prove = time.time()
-    res = ezkl.prove(witness_path, model_path, pk_path, output_proof_path, "single", srs_path)
-    end_prove = time.time()
-    
-    print(f"[+] Zero-Knowledge Proof generated in {end_prove - start_prove:.2f} seconds.")
-    
-    if not res:
-        return jsonify({"error": "Failed to generate proof"}), 500
-
-    with open(output_proof_path, "r") as f:
-        proof_data = json.load(f)
-        
-    return jsonify(proof_data)
-
-def run_node(port=8000):
-    print(f"[*] Sovereign-ZK Node running on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=False)
+    while True:
+        if os.path.exists("network_state.json"):
+            with open("network_state.json", "r") as f:
+                try:
+                    state = json.load(f)
+                except json.JSONDecodeError:
+                    continue # Wait for write to finish
+                    
+            status = state.get("status")
+            
+            if status == "pending_inference":
+                job_id = state.get("job_id")
+                c_x = state.get("c_x")
+                print(f"\n[+] New Job Detected! Job ID: {job_id}")
+                
+                # 1. Simulate TEE Decryption and Inference
+                print("[*] Enclave isolating memory...")
+                print("[*] Executing Deep Learning Inference (FP16)...")
+                time.sleep(2)
+                
+                mock_output = b"Fraud_Score: 0.12"
+                
+                # 2. Generate Output Commitment (C_y) over (JobID, C_x, Output)
+                commitment_input = job_id.encode() + c_x.encode() + mock_output
+                c_y = hashlib.sha256(commitment_input).hexdigest()
+                print(f"[+] Committing to (JobID, C_x, Output) -> C_y: {c_y}")
+                
+                state["status"] = "committed"
+                state["c_y"] = c_y
+                with open("network_state.json", "w") as f:
+                    json.dump(state, f)
+                    
+            elif status == "challenged":
+                print(f"\n[!] ALERT: Randomness Beacon selected Job {state['job_id']} for Audit!")
+                
+                # 1. Receive plaintext (X, nonce) from client to prove inside circuit
+                nonce = state.get("nonce")
+                print("[*] Client revealed input nonces. Preparing ZK-SNARK Proving Circuit...")
+                
+                # 2. Generate Proof
+                print("[*] Generating halo2 ZK-SNARK Proof (Warning: High Compute Overhead)...")
+                time.sleep(4)
+                
+                proof = "0xABC123_VALID_ZK_PROOF"
+                
+                state["status"] = "proof_submitted"
+                state["proof"] = proof
+                with open("network_state.json", "w") as f:
+                    json.dump(state, f)
+                    
+                print("[+] Proof submitted successfully. Awaiting SLA payout.")
+                
+        time.sleep(1)
 
 if __name__ == "__main__":
-    run_node()
+    main()

@@ -1,0 +1,10 @@
+README.md
+setup.py
+sovereign_zk/__init__.py
+sovereign_zk/client.py
+sovereign_zk/node.py
+sovereign_zk.egg-info/PKG-INFO
+sovereign_zk.egg-info/SOURCES.txt
+sovereign_zk.egg-info/dependency_links.txt
+sovereign_zk.egg-info/requires.txt
+sovereign_zk.egg-info/top_level.txt

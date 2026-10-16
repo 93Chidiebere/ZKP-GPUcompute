@@ -10,11 +10,11 @@ import ezkl
 from cryptography.fernet import Fernet
 import time
 
-def run_kenya_enclave(encrypted_data_path, key, output_proof_path):
-    print("--- Starting Sovereign-ZK Prover (AWS Nitro Enclave, Kenya) ---")
+def run_enclave_worker(encrypted_data_path, key, output_proof_path, job_id):
+    print(f"--- Starting Sovereign-ZK Worker Node (Job ID: {job_id}) ---")
     
     # 1. Simulating Enclave Decryption (Admin cannot see this)
-    print("[*] Enclave receiving encrypted payload...")
+    print("[*] Worker receiving encrypted payload...")
     cipher_suite = Fernet(key)
     with open(encrypted_data_path, 'rb') as f:
         encrypted_data = f.read()
@@ -23,10 +23,10 @@ def run_kenya_enclave(encrypted_data_path, key, output_proof_path):
     data = json.loads(plaintext_data.decode('utf-8'))
     
     # Save temporarily inside the "enclave" (simulated by local file)
-    enclave_input_path = "enclave_input.json"
+    enclave_input_path = f"enclave_input_{job_id}.json"
     with open(enclave_input_path, "w") as f:
         json.dump(data, f)
-    print("[+] Enclave decrypted transaction data internally.")
+    print("[+] Worker decrypted transaction data internally.")
 
     # 2. Run ZKML Proving
     compiled_model_path = "network.compiled"
@@ -34,7 +34,7 @@ def run_kenya_enclave(encrypted_data_path, key, output_proof_path):
     srs_path = "kzg.srs"
     settings_path = "settings.json"
     
-    witness_path = "witness.json"
+    witness_path = f"witness_{job_id}.json"
     print("[*] Generating cryptographic witness from data...")
     ezkl.gen_witness(enclave_input_path, compiled_model_path, witness_path)
     
@@ -57,7 +57,10 @@ def run_kenya_enclave(encrypted_data_path, key, output_proof_path):
     
     # 3. Secure Cleanup (Simulating ephemeral enclave memory)
     os.remove(enclave_input_path)
-    print("--- Enclave Execution Complete. Sending Proof to Nigeria ---")
+    os.remove(witness_path)
+    print("--- Worker Execution Complete. Returning Proof to Relayer ---")
+    
+    return output_proof_path
 
 if __name__ == "__main__":
     # For testing the script standalone

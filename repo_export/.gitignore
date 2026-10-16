@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.key
+*.srs
+*.compiled
+*.json
+*.bin
+*.onnx
+*.onnx.data
+*.log
+*.jsonl
+resources/

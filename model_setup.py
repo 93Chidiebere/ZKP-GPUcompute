@@ -82,6 +82,25 @@ def setup():
     print("[*] Generating Proving and Verification Keys (Setup)...")
     ezkl.setup(compiled_model_path, vk_path, pk_path, srs_path, witness_path)
     
+    print("[*] Generating EVM Verifier Smart Contract...")
+    sol_code_path = os.path.join("contracts", "Verifier.sol")
+    abi_path = os.path.join("contracts", "Verifier.abi")
+    
+    # Create contracts directory if it doesn't exist
+    os.makedirs("contracts", exist_ok=True)
+    
+    try:
+        ezkl.create_evm_verifier(
+            vk_path=vk_path,
+            settings_path=settings_path,
+            sol_code_path=sol_code_path,
+            abi_path=abi_path,
+            srs_path=srs_path
+        )
+        print(f"[+] EVM Verifier generated at {sol_code_path}")
+    except Exception as e:
+        print(f"[!] Could not generate EVM Verifier. Ensure 'solc' is installed: {e}")
+    
     print("--- Setup Complete ---")
     print("The Researcher now has:")
     print("1. network.compiled (The ZK Circuit to send to Kenya)")

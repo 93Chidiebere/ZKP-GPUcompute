@@ -5,10 +5,10 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="sovereign-zk",
-    version="0.1.0",
+    version="0.3.1",
     author="Chidiebere",
     author_email="vincent.christopher.189736@unn.edu.ng",
-    description="A lightweight, privacy-preserving framework for cross-border GPU compute using Zero-Knowledge Proofs.",
+    description="A concept framework exploring probabilistic ZK audits and TEEs for cross-border GPU compute.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/93Chidiebere/ZKP-GPUcompute",
@@ -23,6 +23,6 @@ setup(
         "ezkl>=22.3.0",
         "cryptography>=41.0.0",
         "requests>=2.31.0",
-        "flask>=3.0.0"
+        "pycryptodome>=3.19.0"
     ],
 )

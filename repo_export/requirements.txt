@@ -1,0 +1,13 @@
+# Pinned: ezkl>=23 changed prove()'s call signature from the 22.x form the
+# original prototype used (dropped a "proof_type" positional arg). See
+# setup.py and SECURITY.md.
+ezkl>=23.0.0,<24
+cryptography>=41.0.0
+requests>=2.31.0
+flask>=3.0.0
+numpy>=1.24.0
+onnx>=1.14.0
+
+# torch/torchvision removed: nothing in this repo uses them. model_setup.py
+# trains its (small, 5->16->1) model with plain NumPy gradient descent --
+# no need for a ~2GB dependency to fit a logistic-regression-sized model.

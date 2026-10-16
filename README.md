@@ -1,61 +1,59 @@
 # Sovereign-ZK
 
-A lightweight, privacy-preserving framework for cross-border GPU compute using Zero-Knowledge Machine Learning (ZKML). Developed by **Chidiebere V. Christopher**
+A theoretical concept framework exploring privacy-preserving cross-border GPU compute using Zero-Knowledge Verifiable Computation (ZK-VC) and Confidential Computing (CC). Developed by **Chidiebere V. Christopher**.
 
-Sovereign-ZK allows data scientists (e.g., in Nigeria) to securely offload heavy deep learning workloads to remote GPUs (e.g., in Kenya or London) without ever exposing the plain text data to the remote host. It guarantees NDPA compliance via Trusted Execution Environments (TEEs) and cryptographic verification of the compute results using EZKL.
+Sovereign-ZK proposes a two-tier architecture for institutions to offload heavy deep learning workloads to remote Confidential GPUs. It explores protecting plain-text data from remote software adversaries using hardware TEEs, while maintaining computational integrity via probabilistic audits. 
 
-## Installation
+**v0.3.0+ Architecture Revamp:** The framework has completely shifted from Web3 Smart Contracts to a mathematically rigorous **SLA-Backed Probabilistic Audit Model**. It uses a `Commit-Then-Challenge` protocol driven by a public randomness beacon (e.g., `drand`) to ensure cloud provider accountability via economic deterrence ($S \ge g/q$) without blockchain privacy leaks.
 
+## Installation / Upgrade
+
+To upgrade to the SLA Commit-Then-Challenge architecture:
 ```bash
-pip install sovereign-zk
+pip install --upgrade sovereign-zk
 ```
 
-## Quick Start
+## Quick Start (SLA Probabilistic Architecture)
 
-### 1. Start the Remote GPU Node (London/Kenya)
-On the machine with the idle GPU, run the FastAPI/Flask node to listen for encrypted payloads:
+### 1. Start the Remote GPU Node (Kenya)
+The node continuously listens for new AI compute jobs and outputs cryptographic commitments ($C_y$) for every single inference to bind its behavior.
 
-```python
-from sovereign_zk.node import run_node
-
-if __name__ == "__main__":
-    # Starts the listener on port 8000
-    run_node(port=8000)
+```bash
+python -m sovereign_zk.node
 ```
 
 ### 2. Submit Data from the Local Client (Nigeria)
-On your local machine, use the client SDK to encrypt your sensitive data, send it to the node, and cryptographically verify the returned Zero-Knowledge proof.
+On your local machine, use the client SDK to encrypt your data, generate an input commitment ($C_x$), and query the randomness beacon.
 
-```python
-from sovereign_zk.client import SovereignClient
-
-# Initialize the client pointing to the remote GPU
-client = SovereignClient(node_url="http://<REMOTE_NODE_IP>:8000")
-
-# Your sensitive data
-data = {"input_data": [[0.8, 0.1, 0.9, 0.2, 0.5]]}
-
-# Encrypt the data before it leaves your machine
-client.encrypt_data(data, "encrypted.bin")
-
-# Submit the encrypted payload and the ZK circuit to the remote node
-success = client.submit_compute_job(
-    encrypted_data_path="encrypted.bin", 
-    model_path="network.compiled", 
-    pk_path="pk.key", 
-    srs_path="kzg.srs", 
-    output_proof_path="proof.json"
-)
-
-# Cryptographically verify the remote compute result locally
-if success:
-    client.verify_proof("proof.json", "settings.json", "vk.key", "kzg.srs")
+```bash
+python -m sovereign_zk.client
 ```
 
-## Architecture
-This SDK forms **Phase 1** of the Sovereign-ZK deployment architecture, abstracting the complex file handling, encryption, and EZKL bindings into a simple `requests`-based HTTP workflow.
+Under the hood, the client script does this:
+```python
+from sovereign_zk.client import get_drand_beacon
 
-## 👤 Author
+# 1. Encrypt the data and generate Input Commitment
+c_x = hashlib.sha256(encrypted_payload + nonce).hexdigest()
+
+# 2. Receive Output Commitment (C_y) from Node
+c_y = network.wait_for_commitment()
+
+# 3. Query Public Randomness Beacon (e.g., 1% challenge rate)
+beacon_val = get_drand_beacon()
+if beacon_val <= 1:
+    # 4. Job is challenged! Reveal nonce to Node to generate ZK Proof
+    proof = network.challenge_node(nonce)
+    verify_proof(proof, c_x, c_y)
+else:
+    # Accept outcome based on cryptographic economic deterrence
+    authorize_fiat_payment()
+```
+
+## Economics
+Sovereign-ZK uses standard Fiat/SLA contracts. By enforcing a $100\times$ slashing penalty against the cloud provider if they fail a $1\%$ cryptographic audit, African researchers achieve world-class AI compute integrity without the overhead of generating ZK proofs for every single transaction.
+
+## Author
 
 **Chidiebere V. Christopher**
 * **LinkedIn**: [Chidiebere Christopher](https://www.linkedin.com/in/chidiebere-christopher/)
