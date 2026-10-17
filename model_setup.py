@@ -140,8 +140,17 @@ def setup():
     print("[*] Compiling ZK circuit...")
     ezkl.compile_circuit(onnx_path, compiled_model_path, settings_path)
 
-    print("[*] Generating local SRS...")
-    ezkl.gen_srs(srs_path, 17)
+    # Bug fix: this used to hardcode degree 17 regardless of what the
+    # circuit actually needs. Confirmed by direct measurement
+    # (benchmark_fix_check.py) that for this model, calibration produces
+    # logrows=15 -- generating an SRS at degree 17 anyway cost 9.3x slower
+    # proving and ~2,270x slower verification for no benefit. Every timing
+    # number in SECURITY.md prior to this fix was measured against the
+    # oversized, unnecessary SRS.
+    with open(settings_path) as f:
+        calibrated_logrows = json.load(f).get("run_args", {}).get("logrows", 17)
+    print(f"[*] Generating local SRS (degree={calibrated_logrows}, from calibration -- not hardcoded)...")
+    ezkl.gen_srs(srs_path, calibrated_logrows)
 
     print("[*] Generating setup witness...")
     witness_path = "witness.json"

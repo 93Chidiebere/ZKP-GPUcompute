@@ -22,12 +22,66 @@ must deploy yourself, and what's still just a design.
   (`model_setup.py`, `prover_node.py`, `client_demo.py`) run real `ezkl`
   calls against a real (if small, synthetic-data) trained model -- not a
   zero-weight placeholder.
-- Measured on this development machine's CPU: proving a 5→16→1 MLP took
-  **74.4 seconds**; verification completed in well under a second
-  (`ezkl.verify` returned `True`). These are single-run numbers on one
-  small model on unspecified-to-you hardware -- treat as illustrative, not
-  a benchmark claim, and re-measure on your actual deployment target before
-  citing a number anywhere.
+- **Corrected benchmark (see "Benchmark correction" below): proving a
+  5→16→1 MLP takes ~8 seconds; verification takes ~0.03 seconds.**
+  Measured through the actual production pipeline (`test_integration.py`),
+  not an isolated script. These are single-run numbers on one small model
+  on unspecified-to-you hardware -- treat as illustrative, not a benchmark
+  claim, and re-measure on your actual deployment target before citing a
+  number anywhere.
+
+### Benchmark correction (superseded numbers)
+
+An earlier version of this file reported **74.4s proving / "well under a
+second" verification**. Both model_setup.py and the scaling benchmark that
+produced that number shared a bug: the KZG SRS (trusted setup) degree was
+hardcoded to 17 regardless of what the circuit actually needed, rather
+than using the degree EZKL's own calibration step (`logrows` in
+`settings.json`) determined was sufficient -- 15, for this model. An
+oversized SRS doesn't just waste disk space; every prove/verify call pays
+proportional cost to generate and check openings against it. Measured
+side by side on the identical model and identical input:
+
+| | SRS degree 17 (bug) | SRS degree 15 (calibrated, fixed) |
+|---|---|---|
+| Prove time | 76.17s | 8.23s (9.3x faster) |
+| Verify time | 67.52s | 0.030s (2,270x faster) |
+| Proving key size | 138,479,371 bytes | 138,479,371 bytes (unexplained -- see below) |
+
+The fix (`model_setup.py`, `benchmark_fix_check.py`) is to read
+`settings.json`'s calibrated `logrows` and pass that to `ezkl.gen_srs()`
+directly, instead of a hardcoded constant. This also resolved an
+apparent contradiction flagged in earlier review rounds of this project
+(round 2: "Section 2.1 says SNARK proofs verify in milliseconds... yet
+verification took 26.44s") -- that contradiction was real, and was never
+actually about the SNARK scheme's properties; it was this SRS-sizing bug,
+present since the project's first prototype.
+
+A separate bug was found in the same benchmarking pass: the five-model
+scaling sweep (`benchmark_scaling.py`) trained each model against
+mismatched data -- `train_mlp(X, make_data()[1], hidden)` generated a
+*second*, unrelated random dataset just to extract its labels, training
+every model against inputs and labels that didn't correspond to each
+other. Reported train accuracy for all five configurations was ~51-56%
+(chance level) as a direct result; the corrected run (consistent X, y)
+reached 93.25%, matching `model_setup.py`'s original figure. **Any
+"trained model" claim from a script other than `model_setup.py` itself
+should be treated as unverified until re-run with this fix.**
+
+One result from that corrected run is still unexplained and reported
+rather than hidden: proving-key size was byte-identical (138,479,371
+bytes) whether the SRS was generated at degree 17 or degree 15, even
+though prove/verify time dropped sharply. Either `pk.key` size in this
+EZKL version is not primarily determined by SRS degree for circuits this
+small, or there is caching behavior (e.g. a `$HOME`-keyed SRS/key cache)
+this investigation did not isolate. Flagged as an open question rather
+than asserted either way -- do not cite the pk-size figure as evidence of
+anything until this is resolved.
+
+**What this means for anything already cited from this project**: the
+BUILD 2026 abstract and any prior conversation referencing "74.4s /
+67.2s" or "sub-second verification" as an assumption rather than a
+measurement should be corrected to the numbers in this section.
 - Input commitments (`C_X`) are computed over the plaintext input, bound
   with a 256-bit nonce and the job ID (`protocol/commitments.py`) -- fixed
   from the earlier version, which hashed the *ciphertext*, binding nothing
