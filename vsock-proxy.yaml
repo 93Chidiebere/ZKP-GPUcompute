@@ -1,0 +1,17 @@
+# Runs on the PARENT EC2 instance, NOT inside the enclave.
+# This is what makes "the enclave cannot exfiltrate data anywhere except
+# KMS" actually true rather than merely asserted -- the enclave has no
+# network stack of its own; its only path out is vsock -> this proxy ->
+# whatever is allowlisted here.
+#
+# Replace <region> before use, e.g. kms.eu-west-1.amazonaws.com for an
+# EU-hosted deployment (relevant if you want the KMS key itself to live
+# in a specific jurisdiction for the NDPA "appropriate safeguards"
+# question -- that is a legal question this file does not answer).
+allowlist:
+  - {address: kms.<region>.amazonaws.com, port: 443}
+
+# Deliberately nothing else. If a future version of this deployment needs
+# another destination (e.g. a different region's KMS, or a secrets
+# endpoint for credential refresh), add it explicitly here -- do not widen
+# this to an open allowlist.

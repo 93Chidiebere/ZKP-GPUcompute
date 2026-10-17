@@ -1,0 +1,53 @@
+# Image built into the Nitro Enclave (.eif) itself -- NOT the parent
+# instance. Built with: nitro-cli build-enclave --docker-uri <tag> ...
+#
+# This installs kmstool_enclave_cli from AWS's own
+# aws-nitro-enclaves-sdk-c, rather than reimplementing the NSM attestation
+# / KMS Recipient protocol in Python. Vendoring AWS's own published,
+# security-reviewed tool is deliberate: reimplementing attestation-document
+# parsing and COSE signature verification from scratch is exactly the kind
+# of place a from-scratch implementation is easy to get subtly wrong, and
+# wrong in a way that only matters once something is actively attacking it.
+#
+# NOT buildable or testable in a normal container environment: the build
+# below needs an actual AWS Nitro Enclaves build toolchain, and the
+# resulting image only runs correctly inside real enclave hardware via
+# `nitro-cli run-enclave`. Running this Dockerfile's output as a plain
+# `docker run` container gives you a container that LOOKS like it has the
+# tool installed but has no /dev/nsm and no attestation -- which is exactly
+# why nitro.py's _require_enclave_environment() fails closed rather than
+# trusting the presence of the binary alone.
+
+FROM amazonlinux:2023 AS builder
+
+RUN dnf install -y git gcc gcc-c++ cmake make openssl-devel \
+    json-c-devel libcurl-devel
+
+# Vendors AWS's own SDK -- do not reimplement the attestation protocol.
+RUN git clone --depth 1 https://github.com/aws/aws-nitro-enclaves-sdk-c.git /src/sdk-c
+WORKDIR /src/sdk-c
+RUN mkdir build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j"$(nproc)" && \
+    cp bin/kmstool_enclave_cli /usr/local/bin/kmstool_enclave_cli
+
+# --- Runtime stage ---
+FROM python:3.12-slim
+
+COPY --from=builder /usr/local/bin/kmstool_enclave_cli /usr/local/bin/kmstool_enclave_cli
+RUN chmod +x /usr/local/bin/kmstool_enclave_cli
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Enclave image needs the model artifacts baked in (network.compiled,
+# vk.key, pk.key, kzg.srs, settings.json) -- produced by model_setup.py
+# on a trusted build machine BEFORE building this image. The C_W printed
+# by model_setup.py should match what you register in the KMS key policy
+# / your node registry, so a stale rebuild is detectable.
+COPY sovereign_zk/ ./sovereign_zk/
+COPY prover_node.py .
+COPY network.compiled vk.key pk.key kzg.srs settings.json ./
+
+CMD ["python3", "prover_node.py"]
