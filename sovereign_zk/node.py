@@ -1,65 +1,30 @@
-import os
-import json
-import time
-import hashlib
+"""
+DEPRECATED (kept for backward compatibility with sovereign-zk==0.3.0 imports).
 
-def main():
-    print("--- [KENYA NODE] Sovereign-ZK SLA Node ---")
-    print("[*] Listening for new AI Compute Jobs (Off-Chain)...")
+The original compute_proof() handler wrote decrypted plaintext to a
+persistent-disk path ("temp_enclave_input.json") that was only cleaned up
+on the success path (a mid-pipeline exception left it behind), and proved
+every job unconditionally -- no sampling, which is the overhead the
+concept note's probabilistic-audit design exists to avoid.
 
-    while True:
-        if os.path.exists("network_state.json"):
-            with open("network_state.json", "r") as f:
-                try:
-                    state = json.load(f)
-                except json.JSONDecodeError:
-                    continue # Wait for write to finish
-                    
-            status = state.get("status")
-            
-            if status == "pending_inference":
-                job_id = state.get("job_id")
-                c_x = state.get("c_x")
-                print(f"\n[+] New Job Detected! Job ID: {job_id}")
-                
-                # 1. Simulate TEE Decryption and Inference
-                print("[*] Enclave isolating memory...")
-                print("[*] Executing Deep Learning Inference (FP16)...")
-                time.sleep(2)
-                
-                mock_output = b"Fraud_Score: 0.12"
-                
-                # 2. Generate Output Commitment (C_y) over (JobID, C_x, Output)
-                commitment_input = job_id.encode() + c_x.encode() + mock_output
-                c_y = hashlib.sha256(commitment_input).hexdigest()
-                print(f"[+] Committing to (JobID, C_x, Output) -> C_y: {c_y}")
-                
-                state["status"] = "committed"
-                state["c_y"] = c_y
-                with open("network_state.json", "w") as f:
-                    json.dump(state, f)
-                    
-            elif status == "challenged":
-                print(f"\n[!] ALERT: Randomness Beacon selected Job {state['job_id']} for Audit!")
-                
-                # 1. Receive plaintext (X, nonce) from client to prove inside circuit
-                nonce = state.get("nonce")
-                print("[*] Client revealed input nonces. Preparing ZK-SNARK Proving Circuit...")
-                
-                # 2. Generate Proof
-                print("[*] Generating halo2 ZK-SNARK Proof (Warning: High Compute Overhead)...")
-                time.sleep(4)
-                
-                proof = "0xABC123_VALID_ZK_PROOF"
-                
-                state["status"] = "proof_submitted"
-                state["proof"] = proof
-                with open("network_state.json", "w") as f:
-                    json.dump(state, f)
-                    
-                print("[+] Proof submitted successfully. Awaiting SLA payout.")
-                
-        time.sleep(1)
+See sovereign_zk/enclave/simulated.py (tmpfs + guaranteed cleanup) and
+prover_node.py (commit-then-challenge) in the repository root for the
+fixed implementation. prover_node.py is a runnable example script, not
+part of this installed package, for the same reason client_demo.py isn't
+(see sovereign_zk/client.py's docstring).
+"""
+import warnings
 
-if __name__ == "__main__":
-    main()
+warnings.warn(
+    "sovereign_zk.node is deprecated: it leaked plaintext to disk on "
+    "exception and proved every job (no sampling). Use prover_node.py in "
+    "the repository root, or sovereign_zk.enclave.SimulatedEnclaveBackend "
+    "directly.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+try:
+    from prover_node import app, run_node  # noqa: F401
+except ImportError:
+    pass  # prover_node.py is a repo-root example script, not part of this installed package

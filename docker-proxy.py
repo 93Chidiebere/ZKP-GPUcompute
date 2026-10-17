@@ -1,60 +1,54 @@
-from flask import Flask, request, jsonify
-from sovereign_zk.client import SovereignClient
-import json
+"""
+Local convenience proxy: accepts plaintext JSON from a data scientist on
+localhost and runs it through the real commit-then-challenge client flow
+(client_demo.run_job), instead of the deprecated SovereignClient.
+
+Fix from the original: the old version reported success as soon as
+`verify_proof()` passed -- but verify_proof was only ever called when a
+proof existed, and under the probabilistic-audit design MOST jobs won't
+have one (that's the entire point of sampling). This version reports
+accurately whether a given job was cryptographically verified or accepted
+on stake-backed trust, instead of implying every response is proof-backed.
+"""
 import os
+
+from flask import Flask, request, jsonify
+
+from client_demo import run_job, load_registered_model_commitment
 
 app = Flask(__name__)
 
-# The URL of the Gateway or direct Node
-REMOTE_NODE_URL = os.environ.get("REMOTE_NODE_URL", "http://gateway:5000")
+NODE_URL = os.environ.get("REMOTE_NODE_URL", "http://127.0.0.1:8000")
+
 
 @app.route("/proxy/compute", methods=["POST"])
 def proxy_compute():
-    """
-    The local data scientist sends their plain text data to this endpoint.
-    This Docker proxy completely abstracts away the cryptography.
-    """
     data = request.json
-    
     if not data or "input_data" not in data:
         return jsonify({"error": "Missing input_data"}), 400
-        
-    print("[Docker Proxy] Received raw data from local data scientist.")
-    
-    # 1. Initialize client and encrypt
-    client = SovereignClient(node_url=REMOTE_NODE_URL)
-    enc_path = "encrypted_transactions.bin"
-    client.encrypt_data(data, enc_path)
-    
-    print("[Docker Proxy] Data encrypted. Submitting to remote node...")
-    
-    # 2. Submit to remote (Hardcoded local paths for the model and keys for this PoC)
-    proof_path = "proof.json"
-    success = client.submit_compute_job(
-        enc_path, 
-        "network.compiled", 
-        "pk.key", 
-        "kzg.srs", 
-        proof_path
-    )
-    
-    if not success:
-        return jsonify({"error": "Failed to get compute result from remote"}), 502
-        
-    # 3. Verify locally inside the Docker container
-    print("[Docker Proxy] Verifying proof...")
-    is_valid = client.verify_proof(proof_path, "settings.json", "vk.key", "kzg.srs")
-    
-    if is_valid:
-        with open(proof_path, "r") as f:
-            proof_data = json.load(f)
-        return jsonify({
-            "status": "success",
-            "message": "Data securely processed in Kenya and cryptographically verified in Nigeria.",
-            "proof": proof_data
-        })
-    else:
-        return jsonify({"error": "WARNING! Cryptographic verification failed! Result cannot be trusted."}), 403
+
+    try:
+        registered_c_w = load_registered_model_commitment()
+    except FileNotFoundError:
+        return jsonify({"error": "model_commitment.json not found -- run model_setup.py first"}), 500
+
+    result = run_job(NODE_URL, data, registered_c_w)
+    if result is None:
+        return jsonify({"error": "Job failed: model mismatch, ledger mismatch, or proof verification failed. See server logs."}), 502
+
+    return jsonify({
+        "status": "success",
+        "output": result["output"],
+        "cryptographically_verified": bool(result["challenged"]),
+        "backend_isolated_from_host": result["backend_isolated_from_host"],
+        "message": (
+            "Proof was generated and independently verified for this job."
+            if result["challenged"] else
+            "This job was not sampled for a ZK proof; accepted on the node's "
+            "posted economic stake, not on cryptographic proof of this specific inference."
+        ),
+    })
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    app.run(host="0.0.0.0", port=8080, debug=False)

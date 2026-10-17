@@ -1,59 +1,135 @@
 # Sovereign-ZK
 
-A theoretical concept framework exploring privacy-preserving cross-border GPU compute using Zero-Knowledge Verifiable Computation (ZK-VC) and Confidential Computing (CC). Developed by **Chidiebere V. Christopher**.
+A prototype implementation of a **commit-then-challenge** protocol for
+cross-border AI inference: a client sends encrypted data to a remote node,
+the node runs inference and commits to the result, and a sampled subset of
+jobs are backed by a real zero-knowledge proof of correct execution
+(EZKL/halo2) rather than every job, which would be too slow for production
+use. Companion implementation to the *Sovereign-ZK* concept note.
+Developed by **Chidiebere V. Christopher**.
 
-Sovereign-ZK proposes a two-tier architecture for institutions to offload heavy deep learning workloads to remote Confidential GPUs. It explores protecting plain-text data from remote software adversaries using hardware TEEs, while maintaining computational integrity via probabilistic audits. 
+> **Status: prototype.** Read [`SECURITY.md`](SECURITY.md) before using
+> this with real sensitive data. The headline claim worth being explicit
+> about up front: **the default backend provides no hardware isolation.**
+> It runs in an ordinary process and honestly reports that at `/attest`.
+> Real confidentiality requires deploying `NitroEnclaveBackend` on actual
+> Nitro Enclave hardware -- see [`DEPLOY_NITRO.md`](DEPLOY_NITRO.md).
 
-**v0.3.0+ Architecture Revamp:** The framework has completely shifted from Web3 Smart Contracts to a mathematically rigorous **SLA-Backed Probabilistic Audit Model**. It uses a `Commit-Then-Challenge` protocol driven by a public randomness beacon (e.g., `drand`) to ensure cloud provider accountability via economic deterrence ($S \ge g/q$) without blockchain privacy leaks.
+## What's actually implemented and tested here
 
-## Installation / Upgrade
+- Real EZKL circuit compilation, witness generation, proving and
+  verification against a trained (non-trivial-weight) model --
+  `model_setup.py` trains a small MLP with plain NumPy gradient descent,
+  no placeholder zero weights.
+- Input commitments bound to the **plaintext** (not ciphertext), a
+  256-bit nonce, and the job ID -- `sovereign_zk/protocol/commitments.py`.
+- Model commitments (`C_W`), checked client-side against what the client
+  registered for, to catch a node substituting a different model.
+- Commit-then-challenge sampling: the node publishes its output
+  commitment to a tamper-evident, hash-chained ledger **before** reading
+  challenge randomness, so it can't selectively cheat on jobs it predicts
+  won't be audited -- `sovereign_zk/protocol/challenge.py` +
+  `sovereign_zk/protocol/ledger.py`.
+- An economic deterrence check (`S > gain/audit_probability`) actually
+  enforced by the gateway before it will route a job to a node --
+  `sovereign_zk/protocol/deterrence.py` + `gateway_server.py`.
+- Escrow conditioned on outcome: `gateway_server.py` pays a node only
+  after a challenged proof verifies (or on stake-backed trust for
+  unchallenged jobs), and refunds + slashes on a failed challenge --
+  not the pay-before-compute flow of earlier prototype versions.
+- `test_integration.py` exercises the whole flow in-process: a forced
+  challenge (proving + verification), a forced skip, ledger-chain
+  verification, and tamper detection on a corrupted ledger entry. Run it
+  yourself: `python3 model_setup.py && python3 test_integration.py`.
 
-To upgrade to the SLA Commit-Then-Challenge architecture:
+See [`SECURITY.md`](SECURITY.md) for the full status matrix, including
+what's still an open problem (randomness beacon not exercised against a
+live network, Nitro backend not run against real hardware, stake custody,
+quantization tolerance, NDPA legal review).
+
+## Installation
+
 ```bash
-pip install --upgrade sovereign-zk
+pip install -r requirements.txt
 ```
 
-## Quick Start (SLA Probabilistic Architecture)
+(The published PyPI package `sovereign-zk` is an older snapshot;
+installing from this repository checkout gets you the current protocol
+implementation. `sovereign_zk/client.py` and `sovereign_zk/node.py` are
+kept as deprecated compatibility shims that point to the real
+implementations below.)
 
-### 1. Start the Remote GPU Node (Kenya)
-The node continuously listens for new AI compute jobs and outputs cryptographic commitments ($C_y$) for every single inference to bind its behavior.
+## Quick start (local, simulated backend)
 
 ```bash
-python -m sovereign_zk.node
+# 1. Train the model, compile the ZK circuit, publish C_W
+python3 model_setup.py
+
+# 2. Start the prover node (simulated backend -- see the WARNING it prints)
+python3 prover_node.py &
+
+# 3. Run a client job end to end
+python3 client_demo.py
+
+# Or: run the full automated test (forced challenge + forced skip + ledger checks)
+python3 test_integration.py
 ```
 
-### 2. Submit Data from the Local Client (Nigeria)
-On your local machine, use the client SDK to encrypt your data, generate an input commitment ($C_x$), and query the randomness beacon.
+`client_demo.py` checks the node's `/attest` response and its model
+commitment before submitting anything, and prints plainly whether a given
+job's result was cryptographically verified or accepted on economic trust:
 
-```bash
-python -m sovereign_zk.client
+```
+[*] Node backend: simulated  isolated_from_host=False
+[!] This node provides NO hardware isolation. Do not send real sensitive data to it.
+...
+[*] Job was CHALLENGED -- a full ZK proof was generated. Verifying...
+[SUCCESS] Proof verified cryptographically (74.44s to generate).
 ```
 
-Under the hood, the client script does this:
-```python
-from sovereign_zk.client import get_drand_beacon
+## Architecture
 
-# 1. Encrypt the data and generate Input Commitment
-c_x = hashlib.sha256(encrypted_payload + nonce).hexdigest()
-
-# 2. Receive Output Commitment (C_y) from Node
-c_y = network.wait_for_commitment()
-
-# 3. Query Public Randomness Beacon (e.g., 1% challenge rate)
-beacon_val = get_drand_beacon()
-if beacon_val <= 1:
-    # 4. Job is challenged! Reveal nonce to Node to generate ZK Proof
-    proof = network.challenge_node(nonce)
-    verify_proof(proof, c_x, c_y)
-else:
-    # Accept outcome based on cryptographic economic deterrence
-    authorize_fiat_payment()
+```
+client_demo.py  --(encrypted payload, C_X, job_id)-->  prover_node.py
+                                                           |
+                                               EnclaveBackend.run_confidential_inference()
+                                               (SimulatedEnclaveBackend, or
+                                                NitroEnclaveBackend on real hardware)
+                                                           |
+                                               commit C_Y --> ledger.py (hash-chained)
+                                                           |
+                                               read beacon --> should_challenge()
+                                                           |
+                                       challenged? --yes--> ezkl.prove() --> proof
+                                                 \--no---> output only (stake-backed)
+                                                           |
+gateway_server.py  <--(result + proof?)--------------------
+  | checks node stake against deterrence.required_stake()
+  | verifies proof independently if challenged
+  | pays node (Paystack Transfer) or refunds + slashes
 ```
 
-## Economics
-Sovereign-ZK uses standard Fiat/SLA contracts. By enforcing a $100\times$ slashing penalty against the cloud provider if they fail a $1\%$ cryptographic audit, African researchers achieve world-class AI compute integrity without the overhead of generating ZK proofs for every single transaction.
+`gateway_server.py`'s settlement ledger is a local hash-chained log
+(`protocol/ledger.py`), not a blockchain -- see that module's docstring
+for why, and what a production multi-operator deployment would need
+instead.
 
-## Author
+## Deploying with real hardware isolation
+
+See [`DEPLOY_NITRO.md`](DEPLOY_NITRO.md) for the AWS Nitro Enclaves
+deployment runbook. `NitroEnclaveBackend` fails closed (raises
+`NotRunningInEnclaveError`) rather than silently falling back to the
+simulated path if `/dev/nsm` is absent.
+
+## Legal status
+
+Nothing in this repository constitutes legal advice or a compliance
+guarantee. Whether this architecture satisfies the Nigeria Data Protection
+Act's "appropriate safeguards" requirement is an open question requiring
+review by Nigerian data-protection counsel -- see the concept note's
+"Open Problems" section.
+
+## 👤 Author
 
 **Chidiebere V. Christopher**
 * **LinkedIn**: [Chidiebere Christopher](https://www.linkedin.com/in/chidiebere-christopher/)

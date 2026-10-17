@@ -1,15 +1,12 @@
-FROM python:3.13-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install dependencies
-# (We install flask and cryptography, plus ezkl for the verification)
 COPY requirements.txt .
-RUN pip install --no-cache-dir flask requests cryptography ezkl
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Expose the local proxy port
 EXPOSE 8080
 
 CMD ["python", "docker-proxy.py"]

@@ -1,88 +1,33 @@
-import os
-import json
-import time
-import hashlib
-import random
-from Crypto.Cipher import AES
-from Crypto.Random import get_random_bytes
+"""
+DEPRECATED (kept for backward compatibility with sovereign-zk==0.3.0 imports).
 
-# Mock Drand (Public Randomness Beacon)
-def get_drand_beacon():
-    # Returns a random integer between 1 and 100 for the 1% challenge check
-    return random.randint(1, 100)
+SovereignClient.encrypt_data() produced a Fernet key per call but never
+bound a commitment to the PLAINTEXT input -- see
+sovereign_zk/protocol/commitments.py for the fix (commit_input() hashes the
+plaintext + nonce + job_id, not the ciphertext, which is what the old
+SovereignClient effectively did by hashing the already-encrypted payload).
 
-def encrypt_data(data, key):
-    cipher = AES.new(key, AES.MODE_EAX)
-    ciphertext, tag = cipher.encrypt_and_digest(data)
-    return cipher.nonce + tag + ciphertext
+The corrected client flow (client_demo.py) lives at the repository root,
+not inside this installable package, because it's a runnable example that
+talks to a specific local node -- it isn't something `pip install
+sovereign-zk` should import as a library call. If you're running from a
+checkout of the full repo, use:
+    python3 client_demo.py
+Otherwise, build on the protocol primitives directly:
+    from sovereign_zk.protocol.commitments import commit_input, new_nonce
+    from sovereign_zk.protocol.challenge import should_challenge, get_beacon
+"""
+import warnings
 
-def main():
-    print("[*] Initializing Sovereign-ZK Client (SLA / Probabilistic Audit Mode)...")
-    
-    # Simulate generating sensitive financial data
-    print("[*] Encrypting client data payload...")
-    data = b"Transaction: User A to User B, Amount: 5000 NGN"
-    symmetric_key = get_random_bytes(32)
-    encrypted_payload = encrypt_data(data, symmetric_key)
-    
-    # 1. Generate Input Commitment (C_x) over the PLAINTEXT input, nonce, and job ID
-    nonce = get_random_bytes(16).hex()
-    job_id = "job_" + str(int(time.time()))
-    
-    hash_input = data + nonce.encode() + job_id.encode()
-    c_x = hashlib.sha256(hash_input).hexdigest()
-    print(f"[+] Input Commitment (C_x): {c_x}")
+warnings.warn(
+    "sovereign_zk.client.SovereignClient is deprecated and does not "
+    "implement the commit-then-challenge protocol. See client_demo.py in "
+    "the repository root, or build on sovereign_zk.protocol directly.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
-    # 2. Transmit to Node (Mocked via local file drop for SLA architecture)
-    network_state = {
-        "job_id": job_id,
-        "c_x": c_x,
-        "payload": encrypted_payload.hex(),
-        "status": "pending_inference"
-    }
-    
-    with open("network_state.json", "w") as f:
-        json.dump(network_state, f)
-        
-    print(f"[*] Job {job_id} submitted to Node. Waiting for Output Commitment (C_y)...")
-    
-    # 3. Wait for Node to return Output Commitment (C_y)
-    while True:
-        with open("network_state.json", "r") as f:
-            state = json.load(f)
-        if state.get("status") == "committed":
-            c_y = state.get("c_y")
-            print(f"[+] Received Output Commitment (C_y) from Node: {c_y}")
-            break
-        time.sleep(1)
-        
-    # 4. Challenge Phase (1% probability)
-    print("[*] Querying public randomness beacon (drand) for audit selection...")
-    beacon_val = get_drand_beacon()
-    
-    # We will simulate a forced challenge if beacon_val <= 100 for demonstration
-    # In reality, this would be <= 1 (1% chance)
-    if True: # Always challenge for the sake of the SDK demo
-        print(f"[!] JOB CHALLENGED! Initiating ZK-SNARK Audit...")
-        state["status"] = "challenged"
-        state["nonce"] = nonce # Client reveals nonce and X for proof generation
-        with open("network_state.json", "w") as f:
-            json.dump(state, f)
-            
-        print("[*] Waiting for Node to generate ZK Proof...")
-        while True:
-            with open("network_state.json", "r") as f:
-                state = json.load(f)
-            if state.get("status") == "proof_submitted":
-                proof = state.get("proof")
-                print(f"[+] ZK Proof received: {proof}")
-                print(f"[+] Cryptographic verification PASSED! Integrity confirmed.")
-                print(f"[+] SLA conditions met. Fiat payment authorized.")
-                break
-            time.sleep(1)
-    else:
-        print("[+] Job not challenged. Accepting Output Commitment blindly based on SLA deterrence.")
-        print("[+] Fiat payment authorized.")
-
-if __name__ == "__main__":
-    main()
+try:
+    from client_demo import run_job, load_registered_model_commitment  # noqa: F401
+except ImportError:
+    pass  # client_demo.py is a repo-root example script, not part of this installed package
