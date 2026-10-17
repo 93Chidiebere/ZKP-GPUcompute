@@ -68,15 +68,20 @@ reached 93.25%, matching `model_setup.py`'s original figure. **Any
 "trained model" claim from a script other than `model_setup.py` itself
 should be treated as unverified until re-run with this fix.**
 
-One result from that corrected run is still unexplained and reported
-rather than hidden: proving-key size was byte-identical (138,479,371
-bytes) whether the SRS was generated at degree 17 or degree 15, even
-though prove/verify time dropped sharply. Either `pk.key` size in this
-EZKL version is not primarily determined by SRS degree for circuits this
-small, or there is caching behavior (e.g. a `$HOME`-keyed SRS/key cache)
-this investigation did not isolate. Flagged as an open question rather
-than asserted either way -- do not cite the pk-size figure as evidence of
-anything until this is resolved.
+**Update, after the wider scaling sweep (`SCALING_RESULTS.md`):** the
+"pk size identical at degree 17 vs. 15" observation above does NOT
+generalize -- a clean, controlled sweep across five model sizes in one
+script run found an exact 2x pk-size increase at the logrows 15->16
+boundary and an exact 4x increase at 16->18, run entirely within one
+process. That makes the single degree-17-vs-15 comparison that produced
+the identical-bytes observation look like a measurement artifact specific
+to that comparison (its two numbers were taken from two separate script
+runs, not measured side by side), rather than evidence that SRS degree
+doesn't control pk size -- it demonstrably does. See `SCALING_RESULTS.md`
+for the full data and a more precise statement of what's still
+uncertain (the specific artifact in that one comparison was not
+root-caused, but the general relationship it seemed to contradict is now
+well supported).
 
 **What this means for anything already cited from this project**: the
 BUILD 2026 abstract and any prior conversation referencing "74.4s /
